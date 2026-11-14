@@ -22,7 +22,7 @@
   header{padding:12px 16px 0;max-width:720px;margin:0 auto}
   h1{font-size:19px;margin:0 0 8px;font-weight:650}
   nav{display:flex;gap:6px;border-bottom:1px solid var(--line)}
-  nav button{flex:1;background:none;border:0;padding:10px 4px;font:inherit;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;cursor:pointer}
+  nav button{flex:1;background:none;border:0;padding:10px 2px;font:inherit;font-size:15px;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;cursor:pointer}
   nav button.on{color:var(--accent);border-bottom-color:var(--accent)}
   main{max-width:720px;margin:0 auto;padding:14px 16px calc(120px + env(safe-area-inset-bottom))}
   section{display:none}
@@ -93,6 +93,10 @@
   .ov .bot{padding:8px 12px calc(10px + env(safe-area-inset-bottom));display:flex;gap:10px}
   .ov .bot .btn{flex:1}
   .ov .msg{color:#d8dde6;font-size:13px;padding:0 12px 6px}
+  .trow{padding:10px 0;border-bottom:1px solid var(--line)}
+  .trow:last-child{border-bottom:0}
+  .trow .keyline{letter-spacing:.5px}
+  .trow.off{opacity:.55}
   details summary{cursor:pointer;font-weight:600;color:var(--accent)}
   ol.steps{padding-left:20px;margin:8px 0 0}
   ol.steps li{margin:4px 0}
@@ -102,9 +106,10 @@
 <header>
   <h1>Проверка диктанта по бланку</h1>
   <nav id="nav">
-    <button data-tab="key" class="on">1. Ключ</button>
-    <button data-tab="scan">2. Проверка</button>
-    <button data-tab="res">3. Итоги</button>
+    <button data-tab="key" class="on">Ключ</button>
+    <button data-tab="scan">Проверка</button>
+    <button data-tab="res">Итоги</button>
+    <button data-tab="learn">Обучение</button>
   </nav>
 </header>
 <main>
@@ -178,6 +183,27 @@
   <div id="scanResult"></div>
 </section>
 
+<section id="tab-learn">
+  <div class="card">
+    <div style="font-weight:650">Обучение почерку по бланку</div>
+    <p class="hint" style="margin-top:4px">Распечатайте «Обучающий бланк» (отдельный файл PDF) и попросите учеников переписать то, что напечатано над клетками. Сфотографируйте заполненный бланк: приложение само знает, что там должно быть, и запомнит почерк. Исправлять ничего не нужно. Чем больше разных почерков, тем точнее чтение.</p>
+    <div class="btns" style="margin-top:8px">
+      <label class="btn upl" for="inTrCam">📷 Снять бланк</label>
+      <label class="btn sec upl" for="inTrGal">Выбрать фото</label>
+    </div>
+    <input type="file" id="inTrCam" accept="image/*" capture="environment" hidden>
+    <input type="file" id="inTrGal" accept="image/*" hidden>
+    <p class="hint">Запомнено символов: <b id="tCount">0</b></p>
+  </div>
+  <div class="card">
+    <div style="font-weight:650">Образцы для улучшения приложения</div>
+    <p class="hint" style="margin-top:4px">Можно сохранить запомненные образцы букв в небольшой файл (в нём только изображения символов, без фамилий и без фотографий бланков) и прислать его Claude. Тогда основную модель можно будет обучить на настоящем детском почерке, и приложение станет точнее у всех.</p>
+    <button class="btn sec" id="btnExport" type="button">Сохранить образцы в файл</button>
+  </div>
+  <div id="tStatus"></div>
+  <div id="tResult"></div>
+</section>
+
 <section id="tab-res">
   <div id="resBody"></div>
 </section>
@@ -210,8 +236,8 @@ var MODEL = {"classes": "0123456789\u0410\u0411\u0412\u0413\u0414\u0415\u0416\u0
 (function (root) {
   'use strict';
 
-  var LAYOUTS = {"a5": {"fmt": "a5", "page": [148, 210], "markers": {"TL": {"cx": 10, "cy": 10, "size": 12}, "TR": {"cx": 138, "cy": 10, "size": 8}, "BL": {"cx": 10, "cy": 200, "size": 8}, "BR": {"cx": 138, "cy": 200, "size": 8}}, "nameStrip": {"x0": 14, "y0": 26, "x1": 134, "y1": 43}, "rows": {"top": 48, "pitch": 9.2, "cellH": 8.0, "cellW": 6.0, "cells": 20, "x0": 14, "labelX": 12.5, "max": 15}, "variant": {"x0": 82, "dx": 8, "cy": 40, "r": 1.9, "drawR": 2.4, "count": 6}, "head": {"title": 20, "name": 31, "date": 41.0}}, "a6": {"fmt": "a6", "page": [148, 105], "markers": {"TL": {"cx": 10, "cy": 10, "size": 12}, "TR": {"cx": 138, "cy": 10, "size": 8}, "BL": {"cx": 10, "cy": 95, "size": 8}, "BR": {"cx": 138, "cy": 95, "size": 8}}, "nameStrip": {"x0": 14, "y0": 19, "x1": 134, "y1": 37}, "rows": {"top": 41, "pitch": 9.2, "cellH": 8.0, "cellW": 6.0, "cells": 20, "x0": 14, "labelX": 12.5, "max": 5}, "variant": {"x0": 82, "dx": 8, "cy": 33.5, "r": 1.9, "drawR": 2.4, "count": 6}, "head": {"title": 16.5, "name": 25, "date": 34.5}}};
-  LAYOUTS.a5.scale = LAYOUTS.a6.scale = 8; LAYOUTS.a5.inset = LAYOUTS.a6.inset = 1.2;
+  var LAYOUTS = {"a5": {"fmt": "a5", "page": [148, 210], "markers": {"TL": {"cx": 10, "cy": 10, "size": 12}, "TR": {"cx": 138, "cy": 10, "size": 8}, "BL": {"cx": 10, "cy": 200, "size": 8}, "BR": {"cx": 138, "cy": 200, "size": 8}}, "nameStrip": {"x0": 14, "y0": 26, "x1": 134, "y1": 43}, "rows": {"top": 48, "pitch": 9.2, "cellH": 8.0, "cellW": 6.0, "cells": 20, "x0": 14, "labelX": 12.5, "max": 15}, "variant": {"x0": 82, "dx": 8, "cy": 40, "r": 1.9, "drawR": 2.4, "count": 6}, "head": {"title": 20, "name": 31, "date": 41.0}}, "a6": {"fmt": "a6", "page": [148, 105], "markers": {"TL": {"cx": 10, "cy": 10, "size": 12}, "TR": {"cx": 138, "cy": 10, "size": 8}, "BL": {"cx": 10, "cy": 95, "size": 8}, "BR": {"cx": 138, "cy": 95, "size": 8}}, "nameStrip": {"x0": 14, "y0": 19, "x1": 134, "y1": 37}, "rows": {"top": 41, "pitch": 9.2, "cellH": 8.0, "cellW": 6.0, "cells": 20, "x0": 14, "labelX": 12.5, "max": 5}, "variant": {"x0": 82, "dx": 8, "cy": 33.5, "r": 1.9, "drawR": 2.4, "count": 6}, "head": {"title": 16.5, "name": 25, "date": 34.5}}, "tr": {"fmt": "tr", "page": [148, 210], "markers": {"TL": {"cx": 10, "cy": 10, "size": 12}, "TR": {"cx": 138, "cy": 10, "size": 8}, "BL": {"cx": 10, "cy": 200, "size": 8}, "BR": {"cx": 138, "cy": 200, "size": 8}}, "nameStrip": {"x0": 14, "y0": 26, "x1": 134, "y1": 43}, "rows": {"top": 52, "pitch": 14.0, "cellH": 8.0, "cellW": 6.0, "cells": 20, "x0": 14, "labelX": 12.5, "max": 10}, "variant": {"x0": 82, "dx": 8, "cy": 40, "r": 1.9, "drawR": 2.4, "count": 6}, "head": {"title": 19, "name": 31}}};
+  Object.keys(LAYOUTS).forEach(function (k) { LAYOUTS[k].scale = 8; LAYOUTS[k].inset = 1.2; });
   var LAYOUT = LAYOUTS.a5;
 
   // ---------- вспомогательное ----------
@@ -416,7 +442,7 @@ var MODEL = {"classes": "0123456789\u0410\u0411\u0412\u0413\u0414\u0415\u0416\u0
     }
     // отмеченный вариант: доля чернил внутри каждого кружка
     var V = L.variant, variantInk = [];
-    for (i = 0; i < V.count; i++) {
+    for (i = 0; V && i < V.count; i++) {
       var cxp = (V.x0 + V.dx * i - mm.TL.cx) * S, cyp = (V.cy - mm.TL.cy) * S, rr = V.r * S, vi = 0, vt = 0;
       for (var yv = Math.floor(cyp - rr); yv <= cyp + rr; yv++) for (var xv = Math.floor(cxp - rr); xv <= cxp + rr; xv++) {
         if ((xv - cxp) * (xv - cxp) + (yv - cyp) * (yv - cyp) > rr * rr) continue;
@@ -648,7 +674,9 @@ var esc = function(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(
 var R = Recog, CLASSES = R.CLASSES;
 
 var state = { key:{ title:'', cls:'', n:10, nv:1, show:true, vans:[], points:[], thr:[85,65,45] }, works:[] };
-var learn = [];          // подтверждённые учителем символы: [{x:b64(Uint8 580), y:int}]
+var learn = [];          // запомненные символы: [{x:Uint8Array(580), y:int}]
+var TRAIN = [["50248859660436745391", "06011843237727251899", "ДЮРЛЭЩАХЭДФЧЩШЗФАБЭЖ", "КУИЛРЦХЖЦЩСЯМДРЩШЯИТ", "ППВЗЮФГКЫМВВВХЙОЙСРЩ", "СЫОПЕЪТЮШБООЪЪНИЫЗЗЬ", "МФПГЬХЛЬЦЙТЪКЯБДЧЪЮИ", "ЧУЖМИЗБУЭУНЕУЧГЛЛШШЬ", "АЦЙПЫЯННАГТЬЖКСЙЕЕБО", "Ь,-..БО,.У-,--Л,ШИ.Ъ"], ["14183706084998701375", "68210656595432392427", "ГЕГПОХТЯКАЦВВХПЬТЕХЭ", "ШЯААЪЖНМЩЮКТМЮЫСДЬДТ", "ЖЬИЮЬЛЙСЖУЭЧВЫНЭРЙЛЕ", "ФФЗРЯЦЫКЗЪРЛОНЫРЩЖЩЦ", "СЛНОПШОЮЙУПКАБГШСЗБЯ", "ХЬЙУЩЙЭЧУФШИГЧИДЪИИБ", "ЗОЪПВЩМШЧЦБЛЗУМЪБЕДФ", "Л.-Ш--,.У.,ЩЗ.Ъ,О-П,"], ["20856378363801941145", "74265909763278415029", "ОЪЬБНЙШЩЖГУВТГЛЩИКГУ", "ИЦДХЪЖХЖНЩРУЕШОНДУЙЗ", "АМУЛМШЮЮЧОФИФБАЫИЪЗТ", "ЫЙЦКБЭЭТСЦЛЬЬШРПЫФЯА", "ЛВЮЗЦМПДЖГПКФПЕЭМБЪЯ", "ТЪЧБЫЩДЬЬЯСИЙПСВЩШОЗ", "РЧЕРЮЛЙХЭКВЕОНЗСАХЧЯ", "Ъ,,БЬ.--И.Щ,О.-,Л-З."], ["50356387541702208596", "94381068272161947439", "БНЧЫЫПРЖУЙПМКВЗЙААЦО", "ДШДОЬЯУРУВНФХДЫЪЪШЦГ", "ХАЬЯЛОЖИТЪЗЖФЮЧСЩРЗЩ", "НЯСШСГБДТУКЪЕГБЬКУФЭ", "ЬГЦОЮЕБЧТЙЕЯЦИЙШЭРТП", "МЬЖВЗШЪЩНВИПХЮЗЛЙЩФИ", "ИЭМЮЭМЩАЛБЕЫКЛПСОХЛЧ", "ИЩ.,,П-У-..О,Ъ.З--Ь,"]];
+var headW = null;
 var cur = null;
 
 // ---------- хранение ----------
@@ -667,29 +695,41 @@ function load(){
   if(k.show === undefined) k.show = true;
   if(!state.works) state.works = [];
   if(!k.thr || k.thr.length!==3) k.thr=[85,65,45];
-  try{ var l = localStorage.getItem(LS_LEARN); if(l) learn = JSON.parse(l) || []; }catch(e){ learn = []; }
 }
 function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
-function saveLearn(){ try{ localStorage.setItem(LS_LEARN, JSON.stringify(learn)); }catch(e){} }
-
-// ---------- модель ----------
+async function saveLearn(){
+  if(await idbDo('readwrite', function(st){ return st.put(learn, 'learn'); })) return true;
+  try{ localStorage.setItem(LS_LEARN, JSON.stringify(learn.slice(-400).map(function(s){ return { x: f32ToB64(dq8(s.x)), y: s.y }; }))); return true; }catch(e){ return false; }
+}
+async function loadStores(){
+  var L = await idbDo('readonly', function(st){ return st.get('learn'); });
+  if(Array.isArray(L)) learn = L;
+  else {
+    try{ var l = localStorage.getItem(LS_LEARN); if(l){ learn = (JSON.parse(l)||[]).map(function(s){ return { x: typeof s.x === 'string' ? q8(b64ToF32(s.x)) : s.x, y: s.y }; }); } }catch(e){ learn = []; }
+    if(learn.length){ await saveLearn(); }
+  }
+  var H = await idbDo('readonly', function(st){ return st.get('head'); });
+  if(H && H.W1) headW = H;
+  else {
+    try{ var h = localStorage.getItem(LS_HEAD); if(h){ var o = JSON.parse(h); headW = { W1:b64ToF32(o.W1), b1:b64ToF32(o.b1), W2:b64ToF32(o.W2), b2:b64ToF32(o.b2), W3:b64ToF32(o.W3), b3:b64ToF32(o.b3) }; } }catch(e){}
+  }
+}
 function f32ToB64(a){ var u = new Uint8Array(a.buffer, a.byteOffset, a.byteLength), s=''; for(var i=0;i<u.length;i++) s += String.fromCharCode(u[i]); return btoa(s); }
 function b64ToF32(s){ var b = atob(s), buf = new ArrayBuffer(b.length), u = new Uint8Array(buf); for(var i=0;i<b.length;i++) u[i]=b.charCodeAt(i); return new Float32Array(buf); }
-function q8(x){ var u = new Uint8Array(x.length), s=''; for(var i=0;i<x.length;i++){ u[i] = Math.max(0, Math.min(255, Math.round(x[i]*255))); s += String.fromCharCode(u[i]); } return btoa(s); }
-function dq8(b){ var s = atob(b), x = new Float32Array(s.length); for(var i=0;i<s.length;i++) x[i] = s.charCodeAt(i)/255; return x; }
+function q8(x){ var u = new Uint8Array(x.length); for(var i=0;i<x.length;i++) u[i] = Math.max(0, Math.min(255, Math.round(x[i]*255))); return u; }
+function dq8(u){ var x = new Float32Array(u.length); for(var i=0;i<u.length;i++) x[i] = u[i]/255; return x; }
 function initModel(){
   R.init(MODEL);
-  try{
-    var h = localStorage.getItem(LS_HEAD);
-    if(h){ var o = JSON.parse(h); R.setWeights({ W1:b64ToF32(o.W1), b1:b64ToF32(o.b1), W2:b64ToF32(o.W2), b2:b64ToF32(o.b2), W3:b64ToF32(o.W3), b3:b64ToF32(o.b3) }); }
-  }catch(e){}
+  if(headW){ try{ R.setWeights(headW); }catch(e){} }
 }
 async function relearn(onProgress){
-  var S = learn.slice(-800).map(function(s){ return { x: dq8(s.x), y: s.y }; });
-  await R.trainFull(S, 6, 0.02, onProgress);
+  var S = learn.slice(-1500).map(function(s){ return { x: dq8(s.x), y: s.y }; });
+  await R.trainFull(S, 5, 0.02, onProgress);
   var w = R.getWeights(), o = {};
-  Object.keys(w).forEach(function(k){ o[k] = f32ToB64(w[k]); });
-  try{ localStorage.setItem(LS_HEAD, JSON.stringify(o)); return true; }catch(e){ return false; }
+  Object.keys(w).forEach(function(k){ o[k] = new Float32Array(w[k]); });
+  headW = o;
+  if(await idbDo('readwrite', function(st){ return st.put(o, 'head'); })) return true;
+  try{ var q = {}; Object.keys(o).forEach(function(k){ q[k] = f32ToB64(o[k]); }); localStorage.setItem(LS_HEAD, JSON.stringify(q)); return true; }catch(e){ return false; }
 }
 
 // ---------- вкладки ----------
@@ -699,6 +739,7 @@ function showTab(t){
   $('#bar').hidden = !(t==='scan' && cur && cur.rows);
   if(t==='res') renderResults();
   if(t==='scan') updateKeyInfo();
+  if(t==='learn') $('#tCount').textContent = learn.length;
   window.scrollTo(0,0);
 }
 $('#nav').addEventListener('click', function(e){ var b = e.target.closest('button'); if(b) showTab(b.dataset.tab); });
@@ -977,7 +1018,7 @@ function learnFrom(){
     if(ys.some(function(y){ return y<0; })) return;
     filledCells.forEach(function(c,k){ learn.push({ x: q8(c.x), y: ys[k] }); added++; });
   });
-  if(learn.length > 1200) learn = learn.slice(learn.length-1200);
+  if(learn.length > 3000) learn = learn.slice(learn.length-3000);
   return added;
 }
 // ---------- хранилище сканов (IndexedDB, с запасным вариантом в памяти) ----------
@@ -1006,7 +1047,7 @@ function idbDo(mode, fn){
 async function putScan(id, blob){ memScans[id] = blob; return !!(await idbDo('readwrite', function(st){ return st.put(blob, id); })); }
 async function getScan(id){ var b = await idbDo('readonly', function(st){ return st.get(id); }); return b || memScans[id] || null; }
 async function delScan(id){ delete memScans[id]; await idbDo('readwrite', function(st){ return st.delete(id); }); }
-async function clearScans(){ memScans = {}; await idbDo('readwrite', function(st){ return st.clear(); }); }
+
 
 // чистый скан листа: от верхнего левого маркера до конца последней строки
 function baseCanvas(norm, W, n, L){
@@ -1084,7 +1125,7 @@ $('#btnSave').addEventListener('click', async function(){
   var stored = scanBlob ? await putScan(id, scanBlob) : false;
   state.works.push(work);
   save();
-  var added = learnFrom(); saveLearn();
+  var added = learnFrom(); await saveLearn();
   cur = null; $('#scanResult').innerHTML=''; $('#bar').hidden = true;
   var base = 'Сохранено: '+esc(nm)+' — '+total+' из '+max+', оценка '+gradeOf(pct)+'. ' + (stored ? '' : 'Скан листа для родителей не сохранился в памяти (после закрытия приложения будет недоступен). ');
   if(!added){ setStatus(base+'Можно снимать следующий бланк.', stored ? '' : 'warn'); return; }
@@ -1180,11 +1221,11 @@ $('#resBody').addEventListener('click', async function(e){
   var id = e.target.id;
   if(id==='btnForget'){
     if(!e.target.dataset.sure){ e.target.dataset.sure='1'; e.target.textContent='Нажмите ещё раз, чтобы сбросить'; return; }
-    learn = []; saveLearn(); try{ localStorage.removeItem(LS_HEAD); }catch(err){} R.resetWeights(); renderResults(); return;
+    learn = []; headW = null; saveLearn(); idbDo('readwrite', function(st){ return st.delete('head'); }); try{ localStorage.removeItem(LS_HEAD); localStorage.removeItem(LS_LEARN); }catch(err){} R.resetWeights(); renderResults(); return;
   }
   if(id==='btnClear'){
     if(!e.target.dataset.sure){ e.target.dataset.sure='1'; e.target.textContent='Нажмите ещё раз для очистки'; return; }
-    state.works=[]; clearScans(); save(); renderResults(); return;
+    state.works.forEach(function(w){ if(w.id) delScan(w.id); }); state.works=[]; save(); renderResults(); return;
   }
   if(id==='btnCopy'){
     var txt = csvText().replace('﻿','').replace(/;/g,'\t');
@@ -1204,7 +1245,132 @@ $('#resBody').addEventListener('click', async function(e){
   }
 });
 
-load(); buildKey(); initModel(); updateKeyInfo();
+// ---------- обучение по бланку ----------
+var tcur = null;
+function tStatus(msg, kind){ $('#tStatus').innerHTML = msg ? '<div class="status '+(kind||'')+'" role="status">'+msg+'</div>' : ''; }
+function topOf(p){ var t = 0; for(var k=1;k<p.length;k++) if(p[k]>p[t]) t = k; return t; }
+function inTop3(p, y){ var v = p[y], c = 0; for(var k=0;k<p.length;k++) if(p[k] > v) c++; return c < 3; }
+async function trainRead(file){
+  if(!file) return;
+  tcur = null; $('#tResult').innerHTML = ''; tStatus('Ищу углы бланка…');
+  await new Promise(function(r){ setTimeout(r, 30); });
+  try{
+    var img = await loadImageData(file, 2600);
+    var r = BlankScan.scan(img, 10, {maxSide:2600, format:'tr'});
+    if(!r.ok){ tStatus(esc(r.error), 'err'); return; }
+    var L = r.layout, RW = L.rows, sc = L.scale, W = r.width, mm = L.markers.TL;
+    function px(x,y){ return [Math.round((x-mm.cx)*sc), Math.round((y-mm.cy)*sc)]; }
+    var feats = [], strips = [], filledAll = 0, i, j;
+    for(i=0;i<RW.max;i++){
+      var top = RW.top + RW.pitch*i, cells = [];
+      for(j=0;j<RW.cells;j++){
+        var f = R.preprocess(cellCrop(r.norm, W, L, RW.x0 + RW.cellW*j, top));
+        if(f){ f.p = R.classify(f.x, null); filledAll++; }
+        cells.push(f);
+      }
+      feats.push(cells);
+      var p0 = px(RW.x0-2, top-0.8), p1 = px(RW.x0+RW.cellW*RW.cells+0.5, top+RW.cellH+0.8);
+      strips.push(grayCanvas(r.norm, W, p0[0], p0[1], p1[0], p1[1]));
+    }
+    if(filledAll < 15){ tStatus('На бланке почти ничего не написано или он плохо виден. Попробуйте переснять при хорошем свете, чтобы все четыре чёрных квадрата были в кадре.', 'warn'); return; }
+    // какой из листов (№1–4) перед нами: берём тот, чьи символы лучше всего совпадают с прочитанным
+    var scores = TRAIN.map(function(rows){
+      var ok = 0, tot = 0;
+      feats.forEach(function(cells, i){ cells.forEach(function(c, j){ if(!c) return; tot++; if(topOf(c.p) === classIdx(rows[i][j])) ok++; }); });
+      return tot ? ok/tot : 0;
+    });
+    var best = 0; scores.forEach(function(v,k){ if(v > scores[best]) best = k; });
+    tcur = { feats: feats, strips: strips, no: best, rows: [], scores: scores };
+    trainRows();
+    renderTrain();
+  }catch(e){
+    console.error(e); tStatus('Не удалось обработать фото: ' + esc(e && e.message || e), 'err');
+  }
+}
+function classIdx(ch){ return CLASSES.indexOf(ch); }
+function trainRows(){
+  var texts = TRAIN[tcur.no];
+  tcur.rows = tcur.feats.map(function(cells, i){
+    var filled = 0, agree = 0;
+    cells.forEach(function(c, j){ if(!c) return; filled++; if(inTop3(c.p, classIdx(texts[i][j]))) agree++; });
+    var share = filled ? agree/filled : 0;
+    return { i: i, filled: filled, share: share, on: filled >= 3 && share >= 0.25 };
+  });
+}
+function renderTrain(){
+  var box = $('#tResult'); box.innerHTML = '';
+  var texts = TRAIN[tcur.no];
+  var head = document.createElement('div'); head.className = 'card';
+  head.innerHTML = '<div class="vline" style="margin-top:0">Это обучающий бланк № <b>'+(tcur.no+1)+'</b> (номер напечатан сверху бланка). Если определился неверно, выберите правильный:</div><div class="chips">'+
+    TRAIN.map(function(_,k){ return '<button type="button" class="chip'+(k===tcur.no?' on':'')+'" data-tk="'+k+'">№ '+(k+1)+'</button>'; }).join('')+'</div>';
+  box.appendChild(head);
+  var card = document.createElement('div'); card.className = 'card'; card.id = 'trows';
+  tcur.rows.forEach(function(row){
+    var d = document.createElement('div'); d.className = 'trow' + (row.on ? '' : ' off'); d.dataset.row = row.i;
+    d.innerHTML = '<label class="chk"><input type="checkbox" data-ton="'+row.i+'"'+(row.on?' checked':'')+'> <span><b>Строка '+(row.i+1)+'</b> · символов: '+row.filled+(row.filled ? ' · совпало с ожидаемым: '+Math.round(row.share*100)+'%' : ' · пусто')+'</span></label><div class="cv" style="margin-top:6px"></div><div class="keyline">Должно быть: <b>'+esc(texts[row.i])+'</b></div>';
+    var cv = tcur.strips[row.i]; cv.className = 'strip'; d.querySelector('.cv').appendChild(cv);
+    card.appendChild(d);
+  });
+  box.appendChild(card);
+  var go = document.createElement('div'); go.className = 'card';
+  go.innerHTML = '<p class="hint" style="margin:0 0 8px">Снимите галочку у строки, если ученик написал в ней что-то другое или оставил пустой. Остальные символы будут запомнены.</p><button class="btn" id="btnTrainSave" type="button"></button>';
+  box.appendChild(go);
+  updateTrainBtn();
+  tStatus(tcur.scores[tcur.no] > 0.2 ? 'Бланк прочитан. Проверьте строки и нажмите «Запомнить почерк».' : 'Бланк прочитан, но почерк пока читается плохо: так и должно быть сначала. Нажмите «Запомнить почерк».');
+}
+function trainCount(){ var n = 0; tcur.rows.forEach(function(r){ if(r.on) n += r.filled; }); return n; }
+function updateTrainBtn(){ var b = $('#btnTrainSave'); if(!b) return; var n = trainCount(); b.textContent = 'Запомнить почерк ('+n+' символов)'; b.disabled = !n; }
+$('#tResult').addEventListener('click', async function(e){
+  var k = e.target.closest('[data-tk]');
+  if(k && tcur){ tcur.no = +k.dataset.tk; trainRows(); renderTrain(); return; }
+  if(e.target.id === 'btnTrainSave' && tcur) await trainSave();
+});
+$('#tResult').addEventListener('change', function(e){
+  var t = e.target; if(!tcur || t.dataset.ton == null) return;
+  var row = tcur.rows[+t.dataset.ton]; row.on = t.checked;
+  t.closest('.trow').classList.toggle('off', !row.on); updateTrainBtn();
+});
+async function trainSave(){
+  var texts = TRAIN[tcur.no], S = [], hit = 0;
+  tcur.rows.forEach(function(row){
+    if(!row.on) return;
+    tcur.feats[row.i].forEach(function(c, j){
+      if(!c) return;
+      var y = classIdx(texts[row.i][j]); if(y < 0) return;
+      S.push({ x: q8(c.x), y: y }); if(topOf(c.p) === y) hit++;
+    });
+  });
+  if(!S.length) return;
+  $('#btnTrainSave').disabled = true;
+  learn = learn.concat(S); if(learn.length > 3000) learn = learn.slice(learn.length - 3000);
+  await saveLearn();
+  var base = 'Добавлено символов: '+S.length+' (до обучения приложение узнавало из них '+Math.round(hit/S.length*100)+'%). ';
+  tStatus(base + 'Запоминаю почерк…');
+  tcur = null; $('#tResult').innerHTML = ''; $('#tCount').textContent = learn.length;
+  await new Promise(function(r){ setTimeout(r, 50); });
+  var ok = true;
+  try{ ok = await relearn(function(f){ tStatus(base + 'Запоминаю почерк… ' + Math.round(f*100) + '%'); }); }catch(err){ console.error(err); }
+  tStatus(base + 'Готово. Всего запомнено символов: '+learn.length+'. Можно снимать следующий бланк.' + (ok ? '' : ' Память приложения заполнена: обучение не сохранится после закрытия.'), ok ? '' : 'warn');
+}
+function u8ToB64(u){ var s = '', ch = 8192; for(var i=0;i<u.length;i+=ch) s += String.fromCharCode.apply(null, u.subarray(i, i+ch)); return btoa(s); }
+$('#btnExport').addEventListener('click', async function(){
+  if(!learn.length){ tStatus('Пока нечего сохранять: сначала запомните хотя бы один обучающий бланк или проверьте работу.', 'warn'); return; }
+  var F = R.FEAT, buf = new Uint8Array(learn.length * F);
+  learn.forEach(function(s, i){ buf.set(s.x, i*F); });
+  var obj = { app: 'dictant', v: 1, feat: F, n: learn.length, y: learn.map(function(s){ return s.y; }), x: u8ToB64(buf) };
+  var blob = new Blob([JSON.stringify(obj)], {type:'application/json'});
+  try{
+    var file = new File([blob], 'dictant-obrazcy.json', {type:'application/json'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:'Образцы почерка'}); tStatus('Готово.'); return; }
+  }catch(err){ if(err && err.name === 'AbortError') return; }
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'dictant-obrazcy.json'; document.body.appendChild(a); a.click(); a.remove();
+  tStatus('Файл сохранён (папка «Загрузки»). Приложите его к сообщению Claude.');
+});
+$('#inTrCam').addEventListener('change', function(){ var f=this.files[0]; this.value=''; trainRead(f); });
+$('#inTrGal').addEventListener('change', function(){ var f=this.files[0]; this.value=''; trainRead(f); });
+
+load(); buildKey(); updateKeyInfo();
+loadStores().then(initModel, initModel);
 if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){ navigator.serviceWorker.register('sw.js').catch(function(){}); }
 })();
 </script>
