@@ -180,6 +180,7 @@
     <p class="hint">Ключ: <span id="keyInfo"></span></p>
   </div>
   <div id="scanStatus"></div>
+  <p class="hint" id="learnNote" hidden></p>
   <div id="scanResult"></div>
 </section>
 
@@ -879,6 +880,8 @@ function readRow(i, cells, v){
 
 async function handleFile(file){
   if(!file) return;
+  commitCorrections();
+  while(learnBusy) await new Promise(function(r){ setTimeout(r, 150); });
   cur = null; $('#scanResult').innerHTML=''; $('#bar').hidden = true;
   setStatus('Ищу углы бланка…');
   await new Promise(function(r){ setTimeout(r, 30); });
@@ -908,7 +911,7 @@ async function handleFile(file){
       feats.push(cells);
       var res = readRow(i, cells, v0);
       var p0 = px(RW.x0-2, top-0.8), p1 = px(RW.x0+RW.cellW*RW.cells+0.5, top+RW.cellH+0.8);
-      rows.push({ canvas: grayCanvas(r.norm, W, p0[0], p0[1], p1[0], p1[1]), cells: res.cells, text: res.text, unsure: res.unsure, weak: res.weak, hint: res.hint, filled: res.filled, override: null });
+      rows.push({ canvas: grayCanvas(r.norm, W, p0[0], p0[1], p1[0], p1[1]), cells: res.cells, text: res.text, unsure: res.unsure, weak: res.weak, hint: res.hint, filled: res.filled, override: null, touched: false, lrn: null, lrnText: null });
     }
     cur = { nameCanvas: nameCanvas, name:'', rows: rows, feats: feats, variant: variant, vmsg: vmsg, norm: r.norm, W: W, L: L };
     renderScan();
@@ -949,13 +952,14 @@ function renderScan(){
   box.appendChild(again);
   card.addEventListener('input', function(e){
     var t=e.target; if(!t.classList.contains('ans')) return;
-    var i=+t.dataset.i; cur.rows[i].text=t.value; cur.rows[i].unsure=false; cur.rows[i].override=null; updateMarks();
+    var i=+t.dataset.i; cur.rows[i].text=t.value; cur.rows[i].touched=true; cur.rows[i].unsure=false; cur.rows[i].override=null; updateMarks();
   });
+  card.addEventListener('change', function(e){ if(e.target.classList.contains('ans')) commitCorrections(); });
   card.addEventListener('click', function(e){
     var b = e.target.closest('.mark');
     if(b){ var i=+b.dataset.i, ev = evalRow(i); cur.rows[i].override = !ev.ok; updateMarks(); return; }
     var acc = e.target.closest('[data-accept]');
-    if(acc){ var k=+acc.dataset.accept; cur.rows[k].text = cur.rows[k].hint.v; cur.rows[k].unsure=false; cur.rows[k].override=null; syncInputs(); updateMarks(); }
+    if(acc){ var k=+acc.dataset.accept; cur.rows[k].text = cur.rows[k].hint.v; cur.rows[k].touched=true; cur.rows[k].unsure=false; cur.rows[k].override=null; syncInputs(); updateMarks(); commitCorrections(); }
   });
   renderVarCard(); syncInputs(); updateMarks();
   $('#bar').hidden = false;
@@ -975,7 +979,7 @@ function setVariant(v){
   cur.variant = v;
   cur.rows.forEach(function(r,i){
     var res = readRow(i, cur.feats[i], v);
-    r.cells = res.cells; r.text = res.text; r.unsure = res.unsure; r.weak = res.weak; r.hint = res.hint; r.filled = res.filled; r.override = null;
+    r.cells = res.cells; r.text = res.text; r.unsure = res.unsure; r.weak = res.weak; r.hint = res.hint; r.filled = res.filled; r.override = null; r.touched = false;
   });
   renderVarCard(); syncInputs(); updateMarks();
 }
@@ -1009,17 +1013,51 @@ function updateMarks(){
 }
 
 // запомнить подтверждённые символы
+function rowSamples(r){
+  var chars = String(r.text).replace(/\s+/g,'').split('').map(toClassChar), filledCells = r.cells.filter(function(c){ return c; });
+  if(!chars.length || chars.length !== filledCells.length) return null;
+  var ys = chars.map(function(c){ return CLASSES.indexOf(c); });
+  if(ys.some(function(y){ return y<0; })) return null;
+  return filledCells.map(function(c,k){ return { x: q8(c.x), y: ys[k] }; });
+}
+function putRow(r){      // добавить символы строки; прежние её записи заменяются (без дублей)
+  var S = rowSamples(r); if(!S) return 0;
+  if(r.lrn) learn = learn.filter(function(s){ return r.lrn.indexOf(s) < 0; });
+  S.forEach(function(s){ learn.push(s); });
+  r.lrn = S; r.lrnText = r.text;
+  return S.length;
+}
 function learnFrom(){
   var added = 0;
-  cur.rows.forEach(function(r){
-    var chars = String(r.text).replace(/\s+/g,'').split('').map(toClassChar), filledCells = r.cells.filter(function(c){ return c; });
-    if(!chars.length || chars.length !== filledCells.length) return;
-    var ys = chars.map(function(c){ return CLASSES.indexOf(c); });
-    if(ys.some(function(y){ return y<0; })) return;
-    filledCells.forEach(function(c,k){ learn.push({ x: q8(c.x), y: ys[k] }); added++; });
-  });
+  cur.rows.forEach(function(r){ added += putRow(r); });
   if(learn.length > 3000) learn = learn.slice(learn.length-3000);
   return added;
+}
+// автообучение: любое исправление ответа запоминается сразу, без кнопки «Сохранить»
+var learnBusy = false, relearnTimer = null;
+async function markDirty(v){ await idbDo('readwrite', function(st){ return v ? st.put(1, 'dirty') : st.delete('dirty'); }); }
+function scheduleRelearn(ms){
+  clearTimeout(relearnTimer);
+  relearnTimer = setTimeout(runRelearn, ms == null ? 15000 : ms);
+}
+async function runRelearn(){
+  if(learnBusy){ scheduleRelearn(5000); return; }
+  if(!learn.length){ await markDirty(false); return; }
+  learnBusy = true;
+  try{ if(await relearn()) await markDirty(false); }catch(e){ console.error(e); }
+  learnBusy = false;
+  if($('#tCount')) $('#tCount').textContent = learn.length;
+}
+function commitCorrections(){
+  if(!cur || !cur.rows) return 0;
+  var n = 0;
+  cur.rows.forEach(function(r){ if(r.touched && r.lrnText !== r.text) n += putRow(r); });
+  if(n){
+    if(learn.length > 3000) learn = learn.slice(learn.length-3000);
+    saveLearn(); markDirty(true); scheduleRelearn();
+    var st = $('#learnNote'); if(st){ st.textContent = 'Исправление запомнено. Символов в памяти: '+learn.length+'.'; st.hidden = false; }
+  }
+  return n;
 }
 // ---------- хранилище сканов (IndexedDB, с запасным вариантом в памяти) ----------
 var memScans = {}, dbP = null;
@@ -1130,9 +1168,13 @@ $('#btnSave').addEventListener('click', async function(){
   var base = 'Сохранено: '+esc(nm)+' — '+total+' из '+max+', оценка '+gradeOf(pct)+'. ' + (stored ? '' : 'Скан листа для родителей не сохранился в памяти (после закрытия приложения будет недоступен). ');
   if(!added){ setStatus(base+'Можно снимать следующий бланк.', stored ? '' : 'warn'); return; }
   setStatus(base+'Запоминаю почерк…');
+  clearTimeout(relearnTimer);
   setTimeout(async function(){
     var okSave = true;
-    try{ okSave = await relearn(function(f){ setStatus(base+'Запоминаю почерк… '+Math.round(f*100)+'%'); }); }catch(e){ console.error(e); }
+    while(learnBusy) await new Promise(function(r){ setTimeout(r, 150); });
+    learnBusy = true;
+    try{ okSave = await relearn(function(f){ setStatus(base+'Запоминаю почерк… '+Math.round(f*100)+'%'); }); if(okSave) await markDirty(false); }catch(e){ console.error(e); }
+    learnBusy = false;
     setStatus(base+'Можно снимать следующий бланк. Запомнено символов: '+learn.length+'.' + (okSave ? '' : ' Память приложения заполнена: обучение не сохранится после закрытия.'), (okSave && stored) ? '' : 'warn');
   }, 50);
 });
@@ -1178,7 +1220,7 @@ function renderResults(){
     h += '<div class="btns"><button class="btn" id="btnCsv" type="button">Сохранить таблицу (CSV)</button><button class="btn sec" id="btnCopy" type="button">Скопировать</button></div>';
     h += '<div class="btns" style="margin-top:10px"><button class="btn danger" id="btnClear" type="button">Очистить список работ</button></div><div id="resMsg"></div>';
   }
-  h += '<div class="card" style="margin-top:12px"><div style="font-weight:650">Обучение почерку</div><p class="hint">Запомнено символов: <b>'+learn.length+'</b>. Каждая сохранённая работа, где вы проверили ответы, делает чтение точнее.</p><button class="btn danger sm" id="btnForget" type="button">Сбросить обучение</button></div>';
+  h += '<div class="card" style="margin-top:12px"><div style="font-weight:650">Обучение почерку</div><p class="hint">Запомнено символов: <b>'+learn.length+'</b>. Любое ваше исправление ответа запоминается сразу, а сохранённая работа делает чтение ещё точнее. Всё хранится в этом телефоне.</p><button class="btn danger sm" id="btnForget" type="button">Сбросить обучение</button></div>';
   box.innerHTML = h;
 }
 // ---------- просмотр скана с отметками ----------
@@ -1370,7 +1412,15 @@ $('#inTrCam').addEventListener('change', function(){ var f=this.files[0]; this.v
 $('#inTrGal').addEventListener('change', function(){ var f=this.files[0]; this.value=''; trainRead(f); });
 
 load(); buildKey(); updateKeyInfo();
-loadStores().then(initModel, initModel);
+loadStores().then(initModel, initModel).then(async function(){
+  try{ if(navigator.storage && navigator.storage.persist) await navigator.storage.persist(); }catch(e){}
+  var d = await idbDo('readonly', function(st){ return st.get('dirty'); });
+  if(d && learn.length) scheduleRelearn(4000);
+});
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'hidden'){ commitCorrections(); if(relearnTimer){ clearTimeout(relearnTimer); runRelearn(); } }
+});
+window.addEventListener('pagehide', function(){ commitCorrections(); });
 if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){ navigator.serviceWorker.register('sw.js').catch(function(){}); }
 })();
 </script>
